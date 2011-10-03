@@ -1,0 +1,56 @@
+<html>
+<head>
+Testing
+</head>
+
+<body>
+
+<script language="JavaScript">
+function randomInt(n){
+	return Math.floor(Math.random() * n);
+}
+
+function generateSequence(){
+	var firstList = new Array();
+	firstList[0] = 'a01';
+	firstList[1] = 'a02';
+	firstList[2] = 'a03';
+	firstList[3] = 'a04';
+	
+	var secondList = new Array();
+	secondList[0] = 'b01';
+	secondList[1] = 'b02';
+	secondList[2] = 'b03';
+	secondList[3] = 'b04';
+	
+	var seq = "";
+	while (firstList.length > 0 && secondList.length > 0) {
+		var firstValue = randomInt(firstList.length);
+		var secondValue = randomInt(secondList.length);
+		var goesFirst = randomInt(2);
+		if (goesFirst == 0) {
+			seq = seq + firstList[firstValue] + secondList[secondValue];
+		} else {
+			seq = seq + secondList[secondValue] + firstList[firstValue];
+		}
+		firstList.splice(firstValue, 1);
+		secondList.splice(secondValue, 1);
+	}
+	console.log(seq);
+	return seq;
+}
+
+var s = generateSequence();
+</script>
+
+Testing 1 2 3
+
+<form action="i.html">
+<script language="JavaScript">
+document.write('<input type="hidden" name="seq" value="' + s + '" />')
+</script>
+<input type="hidden" name="step" value=0 />
+<input type="submit" value="submit" />
+</form>
+</body>
+</html>
