@@ -1,0 +1,16 @@
+<html>
+<head>
+</head>
+
+<body>
+List of participants and their sequences:
+<br>
+<script language="Javascript">
+for (i=0; i<=localStorage.length-1; i++) {  
+	key = localStorage.key(i);
+	val = localStorage.getItem(key);  
+	document.write(key + ' = ' + val + '<br>');
+}  
+</script>
+</body>
+</html>

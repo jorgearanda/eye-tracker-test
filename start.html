@@ -73,14 +73,17 @@ function generateSequence(){
 var s = generateSequence();
 </script>
 
+Text with instructions.
+<br>
 Press the button to get started.
 <br>
 
-<form action="i.html">
+<form action="j.html">
+Participant ID: <input type="text" name="id" />
 <script language="JavaScript">
 document.write('<input type="hidden" name="seq" value="' + s + '" />')
 </script>
-<input type="hidden" name="step" value=0 />
+<input type="hidden" name="step" value=-1 />
 <input type="submit" value="Track my eyes!" />
 </form>
 </body>

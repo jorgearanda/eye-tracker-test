@@ -22,7 +22,7 @@ function getValue(varname) {
 	return value;
 }
 
-
+var id = getValue("id");
 var seq = getValue("seq");
 var step = getValue("step");
 var intStep = parseInt(step);
@@ -30,9 +30,9 @@ intStep++;
 step = intStep + "";
 
 if (seq.length > intStep * 6 + 1) {
-	document.write('<meta http-equiv="refresh" content="5; URL=i.html?seq=' + seq + '&step=' + step + '">');
+	document.write('<meta http-equiv="refresh" content="5; URL=i.html?id=' + id + '&seq=' + seq + '&step=' + step + '">');
 } else {
-	document.write('<meta http-equiv="refresh" content="5; URL=done.html">');
+	document.write('<meta http-equiv="refresh" content="5; URL=done.html?id=' + id + '&seq=' + seq + '">');
 }
 </script>
 </head>
