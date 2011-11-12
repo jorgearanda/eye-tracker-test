@@ -256,7 +256,8 @@ def outputResultsHeader():
         print "B" + currentImage + "SequenceNum,",
     print "diffTotalATime-BTime,",
     print "diffMeanATime-BTime,",
-    print "diffTotalAFirstGazes-BFirstGazes,"
+    print "diffTotalAFirstGazes-BFirstGazes,",
+    print "TotalTime-(TotalATime+TotalBTime),"
 
 def outputResults(pid, imageTimes, firstGazes, seqNumbers):
     print pid + ",",
@@ -289,7 +290,8 @@ def outputResults(pid, imageTimes, firstGazes, seqNumbers):
 
     print str(totalATime - totalBTime) + ",",
     print str((totalATime - totalBTime) / 19) + ",",
-    print str(diffGazes)
+    print str(diffGazes) + ",",
+    print str(19 * 5470 - (totalATime + totalBTime)) # TODO: Fix 19 * 5470. It represents interval + margin * 2.
 
 
 if __name__ == "__main__":
