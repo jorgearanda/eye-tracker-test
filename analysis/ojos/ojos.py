@@ -85,6 +85,17 @@ def getValues(line):
     v['eventKey'] = t[20].strip()
     return v
 
+def getValuesFXD(line):
+    # Returns a dictionary with the relevant values from lines coming from ParticipantIDFXD.txt format
+    v = {}
+    t = line.split('\t')
+    v['fixnum'] = int(t[0])
+    v['timestamp'] = int(t[1])
+    v['duration'] = int(t[2])
+    v['x'] = int(t[3])
+    v['y'] = int(t[4])
+    return v
+
 def getArea(values):
     # Returns 1 if gaze is in top image, 2 if on bottom image, 3 if on cross area, 0 if none of the above.
     # Values is a dictionary with the keys x and y representing coordinates.
@@ -172,6 +183,38 @@ def parseCMD(id, timeBlocks):
             print "something weird happened"
     return durations
 
+def parseFXD(id, timeBlocks):
+    fxd = open(id + "FXD.txt", "r").readlines()
+    currentTimeBlock = 0
+    gaze = 0
+    fixations = []
+    fixationAbove = 0
+    fixationBelow = 0
+    for i in range(20, len(fxd)):
+        v = getValuesFXD(fxd[i])
+        if v['timestamp'] < timeBlocks[currentTimeBlock][0]:
+            continue
+        elif v['timestamp'] >= timeBlocks[currentTimeBlock][0] and v['timestamp'] <= timeBlocks[currentTimeBlock][1]:
+            # Within our time window
+            # Find where the gaze lies
+            gaze = getArea(v)
+            if gaze == 1:
+                fixationAbove += 1
+            elif gaze == 2:
+                fixationBelow += 1
+        elif v['timestamp'] > timeBlocks[currentTimeBlock][1]:
+            currentTimeBlock += 1
+            fixations.append([fixationAbove, fixationBelow])
+            fixationAbove = 0
+            fixationBelow = 0
+            if currentTimeBlock == 19:
+                break
+            continue
+        else:
+            print "something weird happened"
+    return fixations
+
+
 def writeValues(id):
     cmd = open(id + "CMD.txt").readlines()
     for i in range(20, len(cmd)):
@@ -213,6 +256,22 @@ def linkFirstGazeToImages(sequence, durations):
                 firstGazes[0][secondID] = 1
     return firstGazes
 
+def linkFixationsToImages(sequence, fixations):
+    fixes = []
+    for i in range(2):
+        fixes.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    for i in range(19):
+        pair = sequence[i * 6: i * 6 + 6]
+        firstID = int(pair[1:3]) - 1
+        secondID = int(pair[4:]) - 1
+        if pair[0] == 'a':
+            fixes[0][firstID] = fixations[i][0]
+            fixes[1][secondID] = fixations[i][1]
+        else:
+            fixes[0][secondID] = fixations[i][1]
+            fixes[1][firstID] = fixations[i][0]
+    return fixes
+
 def getAllSequences(filename):
     sequenceLines = open(filename, 'r').readlines()
     sequences = []
@@ -240,18 +299,24 @@ def outputResultsHeader():
     print "Participant,",
     print "TotalATime,",
     print "MeanATime,",
+    print "TotalAFixations,",
+    print "MeanAFixations,",
     for i in range(1, 20):
         currentImage = "0" + str(i)
         currentImage = currentImage[-2:]
         print "A" + currentImage + "Time,",
+        print "A" + currentImage + "Fixations,",
         print "A" + currentImage + "FirstGaze,",
         print "A" + currentImage + "SequenceNum,",
     print "TotalBTime,",
     print "MeanBTime,",
+    print "TotalBFixations,",
+    print "MeanBFixations,",
     for i in range(1, 20):
         currentImage = "0" + str(i)
         currentImage = currentImage[-2:]
         print "B" + currentImage + "Time,",
+        print "B" + currentImage + "Fixations,",
         print "B" + currentImage + "FirstGaze,",
         print "B" + currentImage + "SequenceNum,",
     print "diffTotalATime-BTime,",
@@ -259,18 +324,25 @@ def outputResultsHeader():
     print "diffTotalAFirstGazes-BFirstGazes,",
     print "TotalTime-(TotalATime+TotalBTime),"
 
-def outputResults(pid, imageTimes, firstGazes, seqNumbers):
+def outputResults(pid, imageTimes, firstGazes, fixes, seqNumbers):
     print pid + ",",
     totalATime = 0
     totalBTime = 0
+    totalAFixes = 0
+    totalBFixes = 0
     diffGazes = 0
     for i in range(19):
         totalATime += imageTimes[0][i]
         totalBTime += imageTimes[1][i]
+        totalAFixes += fixes[0][i]
+        totalBFixes += fixes[1][i]
     print str(totalATime) + ",",
     print str(totalATime / 19) + ",",
+    print str(totalAFixes) + ",",
+    print str(totalAFixes / 19) + ",",
     for i in range(19):
         print str(imageTimes[0][i]) + ",", # Time
+        print str(fixes[0][i]) + ",", # Fixations
         if firstGazes[0][i] == 1:
             print "1,", # FirstGaze
             diffGazes += 1
@@ -279,8 +351,11 @@ def outputResults(pid, imageTimes, firstGazes, seqNumbers):
         print str(seqNumbers[0][i]) + ",", # Sequence Number
     print str(totalBTime) + ",",
     print str(totalBTime / 19) + ",",
+    print str(totalBFixes) + ",",
+    print str(totalBFixes / 19) + ",",
     for i in range(19):
         print str(imageTimes[1][i]) + ",", # Time
+        print str(fixes[1][i]) + ",", # Fixations
         if firstGazes[1][i] == 1:
             print "1,", # FirstGaze
             diffGazes -= 1
@@ -302,9 +377,11 @@ if __name__ == "__main__":
         seqDetails = seq[1]
         ts = beginningTimestamp(pid)
         durations = parseCMD(pid, defineBeginEndTimes(ts))
+        fixations = parseFXD(pid, defineBeginEndTimes(ts))
         imageTimes = linkTimesToImages(seqDetails, durations)
         firstGazes = linkFirstGazeToImages(seqDetails, durations)
+        fixes = linkFixationsToImages(seqDetails, fixations)
         seqNumbers = getSequenceNumbers(seqDetails)
-        outputResults(pid, imageTimes, firstGazes, seqNumbers)
+        outputResults(pid, imageTimes, firstGazes, fixes, seqNumbers)
     #getAllEvents(pid)
     #fixClassification(pid, timestamp)
