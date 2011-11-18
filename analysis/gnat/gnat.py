@@ -1,20 +1,31 @@
 import sys
 
 def getInquisitData(filename):
-    validLines = ["BKclimate_actiongoodRT833", "BKclimate_actionbadRT833", "BKclimate_actiongoodRT666", "BKclimate_actionbadRT666"]
+    validLines = ["BKclimate_actiongoodRT833", "BKclimate_actionbadRT833", \
+                  "BKclimate_actiongoodRT666", "BKclimate_actionbadRT666"]
     lines = open(filename, "r").readlines()
     data = []
     realTask = False
+    pid = "0"
+    timestamps = {}
     for i in range(1, len(lines)):
         line = lines[i].split()
         if not realTask and line[4] == "pause":
             realTask = True
-        if realTask and line[9] == "1" and line[11] in validLines and "good_false" not in line[4] and "bad_false" not in line[4]:
+            pid = line[3]
+            if pid not in timestamps:
+                timestamps[pid] = line[1]
+            elif timestamps[pid] != line[1]:
+                pid = line[3] + "000" + line[1][:2] + line[1][3:]
+                timestamps[pid] = line[1]
+        if realTask and line[9] == "1" and line[-1] in validLines and "background" not in line[4] \
+           and "pause" not in line[4] and "reminder" not in line[4] and "good_false" not in line[4] \
+           and "bad_false" not in line[4] and int(line[7]) >= 300:
             dataPieces = []
-            dataPieces.append(line[3]) # ParticipantID
+            dataPieces.append(pid) # ParticipantID
             dataPieces.append(line[4]) # TrialCode
             dataPieces.append(line[7]) # ResponseTime
-            dataPieces.append(line[11]) # BlockCode
+            dataPieces.append(line[-1]) # BlockCode
             data.append(dataPieces)
         if realTask and line[4] == "reminder" or line[4] == "single":
             realTask = False
@@ -41,20 +52,27 @@ def getResponseTimes(data):
             pValues[7] += 1
         else:
             print "Something weird happened"
+            break
         results[int(row[0])] = pValues
     return results
 
 def outputResults(results, filename):
     file = open(filename, "w")
-    file.write("PID, CAGood833, CABad833, CAGood666, CABad666\r\n")
+    file.write("PID, CAGood833, CABad833, CAGood666, CABad666, Bad-Good833, Bad-Good666\r\n")
     pids = sorted(results.keys())
     for pid in pids:
         file.write(str(pid) + ", ")
-        for i in range(4):
-            if results[pid][i + 4] != 0:
-                file.write(str(results[pid][i] / results[pid][i + 4]) + ", ")
-            else:
-                file.write("0, ")
+        good833 = bad833 = good666 = bad666 = 0.0
+        if results[pid][4] != 0:
+            good833 = 1.0 * results[pid][0] / results[pid][4]
+        if results[pid][5] != 0:
+            bad833 = 1.0 * results[pid][1] / results[pid][5]
+        if results[pid][6] != 0:
+            good666 = 1.0 * results[pid][2] / results[pid][6]
+        if results[pid][7] != 0:
+            bad666 = 1.0 * results[pid][3] / results[pid][7]
+        file.write(str(good833) + ", " + str(bad833) + ", " + str(good666) + ", " + str(bad666) + ", ")
+        file.write(str(bad833 - good833) + ", " + str(bad666 - good666))
         file.write("\r\n")
     file.close()
 
