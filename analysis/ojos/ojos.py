@@ -1,3 +1,8 @@
+import sys
+
+FIRSTGAZEBOTTOM = 1
+FIRSTGAZETOP = 0
+NOFIRSTGAZE = -1
 NUM_PAIRS = 19
 NOBLOCK = 0
 CROSSBLOCK = 3
@@ -23,7 +28,7 @@ def beginningTimestamp(id):
     # That is, the timestamp (in milliseconds) that most probably represents the mouse click to tell the
     # browser to get started with the sequence of images.
     # This would be the *last* LMouseButton event that happens *before* a generous threshold.
-    threshold = inverval * 20 # After this number of milliseconds, we assume the task must have started already
+    threshold = INTERVAL * 20 # After this number of milliseconds, we assume the task must have started already
     events = open(id + "EVD.txt").readlines()
     lastLMouseButton = 0
     for i in range(13, len(events)): # Before line 13 it's all header data.
@@ -102,7 +107,9 @@ def defineBeginEndTimes(ts):
     return timeBlocks
 
 def parseCMD(id, timeBlocks):
-    # TODO: Continue cleaning code beginning at this point.
+    # This is where we get most of our data.
+    # The basic idea is to check whether each row in the CMD file falls within our range
+    # If so, get its information. If not, discard.
     cmd = open(id + "CMD.txt").readlines()
     currentTimeBlock = 0
     lastGaze = 0
@@ -110,26 +117,31 @@ def parseCMD(id, timeBlocks):
     gaze = 0
     durations = []
     duration = 0
-    durationAbove = 0
-    durationBelow = 0
-    durationCross = 0
+    durationAbove = durationBelow = durationCross = 0  # we don't actually care about gazes at the cross.
+
+    # Format for pupils: [0] for top block, [1] for bottom block. And then within each row, the four items are:
+    # [0] count
+    # [1] sum of sizes (these two will give us the mean size)
+    # [2] maximum size
+    # [3] minimum size (when we can actually get a reading)
     pupils = [[0,0,0,0],[0,0,0,0]]
-    firstGaze = -1 #Should take values 0 for Top and 1 for Bottom
-    for i in range(20, len(cmd)):
+
+    firstGaze = NOFIRSTGAZE # Should take values 0 for Top and 1 for Bottom. -1 means no first gaze detected yet.
+    for i in range(20, len(cmd)):  # no valid timestamps before line 20
         v = getValues(cmd[i])
         if v['timestamp'] < timeBlocks[currentTimeBlock][0]:
+            # Before the official start time of our current time block
             continue
         elif v['timestamp'] >= timeBlocks[currentTimeBlock][0] and v['timestamp'] <= timeBlocks[currentTimeBlock][1]:
             # Within our time window
-            # Find where the gaze lies
             gaze = getArea(v)
-            if gaze != 0 and gaze == lastGaze:
+            if gaze != 0 and gaze == lastGaze:  # We only count after two gazes in the same area, for duration to make sense.
                 duration = v['timestamp'] - lastTimestamp
-                if gaze == 1:
+                if gaze == TOPBLOCK:
                     durationAbove += duration
-                    if firstGaze < 0:
-                        firstGaze = 0
-                    if v['pupilLeft'] > 0:
+                    if firstGaze == NOFIRSTGAZE:
+                        firstGaze = FIRSTGAZETOP
+                    if v['pupilLeft'] > 0: # We actually have a reading on this pupil
                         pupils[0][0] += 1
                         pupils[0][1] += v['pupilLeft']
                         pupils[0][2] = max(pupils[0][2], v['pupilLeft'])
@@ -145,10 +157,10 @@ def parseCMD(id, timeBlocks):
                             pupils[0][3] = v['pupilRight']
                         else:
                             pupils[0][3] = min(pupils[0][3], v['pupilRight'])
-                elif gaze == 2:
+                elif gaze == BOTTOMBLOCK:
                     durationBelow += duration
-                    if firstGaze < 0:
-                        firstGaze = 1
+                    if firstGaze == NOFIRSTGAZE:
+                        firstGaze = FIRSTGAZEBOTTOM
                     if v['pupilLeft'] > 0:
                         pupils[1][0] += 1
                         pupils[1][1] += v['pupilLeft']
@@ -165,50 +177,49 @@ def parseCMD(id, timeBlocks):
                             pupils[1][3] = v['pupilRight']
                         else:
                             pupils[1][3] = min(pupils[1][3], v['pupilRight'])
-                else:
-                    durationCross += duration
+            # Prepping for the next timestamp
             lastGaze = gaze
             lastTimestamp = v['timestamp']
         elif v['timestamp'] > timeBlocks[currentTimeBlock][1]:
+            # After the end of our current time block.
+            # Should only happen once per block, as we immediately get ready for the next time block.
+            durations.append([durationAbove, durationBelow, durationCross, firstGaze, pupils])
+            # Note above that "durations" actually reports on more than durations!
             currentTimeBlock += 1
             lastGaze = 0
-            durations.append([durationAbove, durationBelow, durationCross, firstGaze, pupils])
-            durationAbove = 0
-            durationBelow = 0
-            durationCross = 0
+            durationAbove = durationBelow = durationCross = 0
             pupils = [[0,0,0,0],[0,0,0,0]]
-            firstGaze = -1
-            if currentTimeBlock == NUM_PAIRS:
+            firstGaze = NOFIRSTGAZE
+            if currentTimeBlock == NUM_PAIRS: # We're done!
                 break
             continue
         else:
+            # We really shouldn't be able to get here.
             print "something weird happened"
     return durations
 
 def parseFXD(id, timeBlocks):
+    # Works with the same principle as parseCMD. But in this case we parse the fixations file
     fxd = open(id + "FXD.txt", "r").readlines()
     currentTimeBlock = 0
     gaze = 0
     fixations = []
-    fixationAbove = 0
-    fixationBelow = 0
-    for i in range(20, len(fxd)):
+    fixationAbove = fixationBelow = 0
+    for i in range(20, len(fxd)): # No valid timestamps before this row
         v = getValuesFXD(fxd[i])
         if v['timestamp'] < timeBlocks[currentTimeBlock][0]:
             continue
         elif v['timestamp'] >= timeBlocks[currentTimeBlock][0] and v['timestamp'] <= timeBlocks[currentTimeBlock][1]:
             # Within our time window
-            # Find where the gaze lies
             gaze = getArea(v)
-            if gaze == 1:
+            if gaze == TOPBLOCK:
                 fixationAbove += 1
-            elif gaze == 2:
+            elif gaze == BOTTOMBLOCK:
                 fixationBelow += 1
         elif v['timestamp'] > timeBlocks[currentTimeBlock][1]:
             currentTimeBlock += 1
             fixations.append([fixationAbove, fixationBelow])
-            fixationAbove = 0
-            fixationBelow = 0
+            fixationAbove = fixationBelow = 0
             if currentTimeBlock == NUM_PAIRS:
                 break
             continue
@@ -216,21 +227,20 @@ def parseFXD(id, timeBlocks):
             print "something weird happened"
     return fixations
 
-
-def writeValues(id):
-    cmd = open(id + "CMD.txt").readlines()
-    for i in range(20, len(cmd)):
-        print getValues(cmd[i])
-
 def linkTimesToImages(sequence, durations):
-    imageTimes = []
-    for i in range(2):
-        imageTimes.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    # OK so we've parsed the combined file already, and we have a sequence of images. Now we need to tell apart
+    # which image corresponds to which set of durations.
+    # In order to do so, we parse the sequences string, and at each point figure out which image was shown on top,
+    # and which one on bottom, and we give each of them their corresponding durations, first gazes, and pupil sizes.
+
+    imageTimes = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
+    # For imageTimes, the first set of numbers corresponds to climate-related images; the second to non-related
+
     for i in range(NUM_PAIRS):
-        pair = sequence[i * 6: i * 6 + 6]
+        pair = sequence[i * 6: i * 6 + 6] # Each pair takes six characters in the string (e.g. "a04b12")
         firstID = int(pair[1:3]) - 1
         secondID = int(pair[4:]) - 1
-        if pair[0] == 'a':
+        if pair[0] == 'a': # The top image is the climate-related image
             imageTimes[0][firstID] = durations[i][0]
             imageTimes[1][secondID] = durations[i][1]
         else:
@@ -239,9 +249,8 @@ def linkTimesToImages(sequence, durations):
     return imageTimes
 
 def linkFirstGazeToImages(sequence, durations):
-    firstGazes = []
-    for i in range(2):
-        firstGazes.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    # Exact same principle as linkTimesToImages above; same comments apply
+    firstGazes = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
     for i in range(NUM_PAIRS):
         pair = sequence[i * 6: i * 6 + 6]
         firstID = int(pair[1:3]) - 1
@@ -256,23 +265,21 @@ def linkFirstGazeToImages(sequence, durations):
                 firstGazes[1][firstID] = 1
             elif durations[i][3] == 1: # Bottom was first gaze
                 firstGazes[0][secondID] = 1
+    # Note that it's possible for neither image to be assigned firstGaze
     return firstGazes
 
 def linkPupilsToImages(sequence, durations):
-    maxPupils = []
-    minPupils = []
-    sumPupils = []
-    countPupils = []
-    for i in range(2):
-        maxPupils.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
-        minPupils.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
-        sumPupils.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
-        countPupils.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    # Again, same principle as above. The wrinkle is that we care about more pupil metrics, so it's a bit more messy.
+    maxPupils = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
+    minPupils = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
+    sumPupils = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
+    countPupils = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
     for i in range(NUM_PAIRS):
         pair = sequence[i * 6: i * 6 + 6]
         firstID = int(pair[1:3]) - 1
         secondID = int(pair[4:]) - 1
         if pair[0] == 'a':
+            # durations[i][4][...] holds the pupils list. (durations[i][0-3] have durations and firstGazes)
             maxPupils[0][firstID] = durations[i][4][0][2]
             minPupils[0][firstID] = durations[i][4][0][3]
             sumPupils[0][firstID] = durations[i][4][0][1]
@@ -294,9 +301,8 @@ def linkPupilsToImages(sequence, durations):
     return ps
 
 def linkFixationsToImages(sequence, fixations):
-    fixes = []
-    for i in range(2):
-        fixes.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    # One more with the same principle as above.
+    fixes = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
     for i in range(NUM_PAIRS):
         pair = sequence[i * 6: i * 6 + 6]
         firstID = int(pair[1:3]) - 1
@@ -309,17 +315,11 @@ def linkFixationsToImages(sequence, fixations):
             fixes[1][firstID] = fixations[i][0]
     return fixes
 
-def getAllSequences(filename):
-    sequenceLines = open(filename, 'r').readlines()
-    sequences = []
-    for sequence in sequenceLines:
-        sequences.append(sequence.strip().split(' = '))
-    return sequences
-
 def getSequenceNumbers(seq):
-    seqNumbers = []
-    for i in range(2):
-        seqNumbers.append([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    # Once again, same principle. Which indicates there might be a way to abstract all of these, but each is
+    # different enough that it seems more effort than it's worth.
+    # Anyway, in this case, seqNumbers tells us, for each image, when in the sequence did it appear.
+    seqNumbers = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
     for i in range(NUM_PAIRS):
         pair = seq[i * 6: i * 6 + 6]
         firstID = int(pair[1:3]) - 1
@@ -332,68 +332,63 @@ def getSequenceNumbers(seq):
             seqNumbers[1][firstID] = i + 1
     return seqNumbers
 
-def outputResultsHeader():
-    print "Participant,",
-    print "TotalATime,",
-    print "MeanATime,",
-    print "TotalAFixations,",
-    print "MeanAFixations,",
-    print "MaxAPupils,",
-    print "MinAPupils,",
-    print "MeanAPupils,",
-    for i in range(1, 20):
-        currentImage = "0" + str(i)
-        currentImage = currentImage[-2:]
-        print "A" + currentImage + "Time,",
-        print "A" + currentImage + "Fixations,",
-        print "A" + currentImage + "FirstGaze,",
-        print "A" + currentImage + "SequenceNum,",
-        print "A" + currentImage + "MaxPupil,",
-        print "A" + currentImage + "MinPupil,",
-        print "A" + currentImage + "MeanPupil,",
-    print "TotalBTime,",
-    print "MeanBTime,",
-    print "TotalBFixations,",
-    print "MeanBFixations,",
-    print "MaxBPupils,",
-    print "MinBPupils,",
-    print "MeanBPupils,",
-    for i in range(1, 20):
-        currentImage = "0" + str(i)
-        currentImage = currentImage[-2:]
-        print "B" + currentImage + "Time,",
-        print "B" + currentImage + "Fixations,",
-        print "B" + currentImage + "FirstGaze,",
-        print "B" + currentImage + "SequenceNum,",
-        print "B" + currentImage + "MaxPupil,",
-        print "B" + currentImage + "MinPupil,",
-        print "B" + currentImage + "MeanPupil,",
-    print "diffTotalATime-BTime,",
-    print "diffMeanATime-BTime,",
-    print "diffTotalAFirstGazes-BFirstGazes,",
-    print "diffTotalAFixations-BFixations,",
-    print "percentMeanAPupil-MeanBPupil,",
-    print "TotalTime-(TotalATime+TotalBTime),"
+def getAllSequences(filename):
+    # Get the sequences for all participants that we're going to analyze.
+    # All the lines in the sequences file should be in the form of participantID = sequence
+    sequenceLines = open(filename, 'r').readlines()
+    sequences = []
+    for sequence in sequenceLines:
+        sequences.append(sequence.strip().split(' = '))
+    return sequences
 
-def outputResults(pid, imageTimes, firstGazes, fixes, pups, seqNumbers):
-    print pid + ",",
-    totalATime = 0
-    totalBTime = 0
-    totalAFixes = 0
-    totalBFixes = 0
-    diffGazes = 0
+def outputResultsHeader(res):
+    # Nothing interesting; just write the header for the data
+    res.write("Participant, TotalATime, MeanATime, TotalAFixations, MeanAFixations, MaxAPupils, MinAPupils, MeanAPupils, ")
+    for i in range(1, NUM_PAIRS + 1):
+        currentImage = "0" + str(i)
+        currentImage = "A" + currentImage[-2:]
+        res.write(currentImage + "Time, ")
+        res.write(currentImage + "Fixations, ")
+        res.write(currentImage + "FirstGaze, ")
+        res.write(currentImage + "SequenceNum, ")
+        res.write(currentImage + "MaxPupil, ")
+        res.write(currentImage + "MinPupil, ")
+        res.write(currentImage + "MeanPupil, ")
+    res.write("TotalBTime, MeanBTime, TotalBFixations, MeanBFixations, MaxBPupils, MinBPupils, MeanBPupils, ")
+    for i in range(1, NUM_PAIRS + 1):
+        currentImage = "0" + str(i)
+        currentImage = "B" + currentImage[-2:]
+        res.write(currentImage + "Time, ")
+        res.write(currentImage + "Fixations, ")
+        res.write(currentImage + "FirstGaze, ")
+        res.write(currentImage + "SequenceNum, ")
+        res.write(currentImage + "MaxPupil, ")
+        res.write(currentImage + "MinPupil, ")
+        res.write(currentImage + "MeanPupil, ")
+    res.write("diffTotalATime-BTime, diffMeanATime-BTime, diffTotalAFirstGazes-BFirstGazes, ")
+    res.write("diffTotalAFixations-BFixations, percentMeanAPupil-MeanBPupil, TotalTime-(TotalATime+TotalBTime)\n")
+
+def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers):
+    # Long method! Here we output all the stuff we've been collecting.
+
+    # Participant ID
+    res.write(pid + ", ")
+
+    # Times and fixes
+    totalATime = totalBTime = totalAFixes = totalBFixes = diffGazes = 0
     for i in range(NUM_PAIRS):
         totalATime += imageTimes[0][i]
         totalBTime += imageTimes[1][i]
         totalAFixes += fixes[0][i]
         totalBFixes += fixes[1][i]
-    print str(totalATime) + ",",
-    print str(totalATime / NUM_PAIRS) + ",",
-    print str(totalAFixes) + ",",
-    print str(totalAFixes / NUM_PAIRS) + ",",
+    res.write(str(totalATime) + ", ")
+    res.write(str(totalATime / NUM_PAIRS) + ", ")
+    res.write(str(totalAFixes) + ", ")
+    res.write(str(totalAFixes / NUM_PAIRS) + ", ")
 
+    # Pupil summaries
     maxAPupils = maxBPupils = sumAPupils = sumBPupils = countAPupils = countBPupils = 0
-    minAPupils = minBPupils = 10000
+    minAPupils = minBPupils = 10000 # 10000 is a high initialization to be disposed of
     for i in range(NUM_PAIRS):
         maxAPupils = max(maxAPupils, pups[0][0][i])
         maxBPupils = max(maxBPupils, pups[0][1][i])
@@ -405,79 +400,91 @@ def outputResults(pid, imageTimes, firstGazes, fixes, pups, seqNumbers):
         sumBPupils += pups[2][1][i]
         countAPupils += pups[3][0][i]
         countBPupils += pups[3][1][i]
-    print str(maxAPupils) + ", ",
-    print str(minAPupils) + ", ",
-    if countAPupils > 0:
-        print str(1.0 * sumAPupils / countAPupils) + ", ",
+    res.write(str(maxAPupils) + ", ")
+    if minAPupils != 10000:
+        res.write(str(minAPupils) + ", ")
     else:
-        print "0.0, ",
+        res.write("--, ")
+    if countAPupils > 0:
+        res.write(str(1.0 * sumAPupils / countAPupils) + ", ")
+    else:
+        res.write("0.0, ")
 
     for i in range(NUM_PAIRS):
-        print str(imageTimes[0][i]) + ",", # Time
-        print str(fixes[0][i]) + ",", # Fixations
+        res.write(str(imageTimes[0][i]) + ", ") # Time
+        res.write(str(fixes[0][i]) + ", ") # Fixations
         if firstGazes[0][i] == 1:
-            print "1,", # FirstGaze
+            res.write("1, ") # FirstGaze
             diffGazes += 1
         else:
-            print "0,",
-        print str(seqNumbers[0][i]) + ",", # Sequence Number
-        print str(pups[0][0][i]) + ",", # MaxPupil
-        print str(pups[1][0][i]) + ",", # MinPupil
+            res.write("0, ")
+        res.write(str(seqNumbers[0][i]) + ", ") # Sequence Number
+        res.write(str(pups[0][0][i]) + ", ") # MaxPupil
+        res.write(str(pups[1][0][i]) + ", ") # MinPupil
         if pups[3][0][i] > 0:
-            print str(1.0 * pups[2][0][i] / pups[3][0][i]) + ",", #MeanPupil
+            res.write(str(1.0 * pups[2][0][i] / pups[3][0][i]) + ", ") #MeanPupil
         else:
-            print "0.0,",
+            res.write("0.0, ")
 
-    print str(totalBTime) + ",",
-    print str(totalBTime / NUM_PAIRS) + ",",
-    print str(totalBFixes) + ",",
-    print str(totalBFixes / NUM_PAIRS) + ",",
-    print str(maxBPupils) + ", ",
-    print str(minBPupils) + ", ",
+    # Non-climate images information
+    res.write(str(totalBTime) + ", ")
+    res.write(str(totalBTime / NUM_PAIRS) + ", ")
+    res.write(str(totalBFixes) + ", ")
+    res.write(str(totalBFixes / NUM_PAIRS) + ", ")
+    res.write(str(maxBPupils) + ", ")
+    res.write(str(minBPupils) + ", ")
     if countBPupils > 0:
-        print str(1.0 * sumBPupils / countBPupils) + ", ",
+        res.write(str(1.0 * sumBPupils / countBPupils) + ", ")
     else:
-        print "0.0, ",
+        res.write("0.0, ")
 
     for i in range(NUM_PAIRS):
-        print str(imageTimes[1][i]) + ",", # Time
-        print str(fixes[1][i]) + ",", # Fixations
+        res.write(str(imageTimes[1][i]) + ", ") # Time
+        res.write(str(fixes[1][i]) + ", ") # Fixations
         if firstGazes[1][i] == 1:
-            print "1,", # FirstGaze
+            res.write("1, ") # FirstGaze
             diffGazes -= 1
         else:
-            print "0,",
-        print str(seqNumbers[1][i]) + ",", # Sequence Number
-        print str(pups[0][1][i]) + ",", # MaxPupil
-        print str(pups[1][1][i]) + ",", # MinPupil
+            res.write("0, ")
+        res.write(str(seqNumbers[1][i]) + ", ") # Sequence Number
+        res.write(str(pups[0][1][i]) + ", ") # MaxPupil
+        res.write(str(pups[1][1][i]) + ", ") # MinPupil
         if pups[3][1][i] > 0:
-            print str(1.0 * pups[2][1][i] / pups[3][1][i]) + ",", #MeanPupil
+            res.write(str(1.0 * pups[2][1][i] / pups[3][1][i]) + ", ") #MeanPupil
         else:
-            print "0.0,",
+            res.write("0.0, ")
 
-    print str(totalATime - totalBTime) + ",",
-    print str((totalATime - totalBTime) / NUM_PAIRS) + ",",
-    print str(diffGazes) + ",",
-    print str(totalAFixes - totalBFixes) + ",",
+    res.write(str(totalATime - totalBTime) + ", ")
+    res.write(str((totalATime - totalBTime) / NUM_PAIRS) + ", ")
+    res.write(str(diffGazes) + ", ")
+    res.write(str(totalAFixes - totalBFixes) + ", ")
     if countAPupils > 0 and countBPupils > 0 and sumBPupils > 0:
-        print str((1.0 * sumAPupils / countAPupils) / (1.0 * sumBPupils / countBPupils)) + ",",
+        res.write(str((1.0 * sumAPupils / countAPupils) / (1.0 * sumBPupils / countBPupils)) + ", ")
     else:
-        print "---,",
-    print str(NUM_PAIRS * (INTERVAL + MARGIN * 2) - (totalATime + totalBTime))
+        res.write("---, ")
+    res.write(str(NUM_PAIRS * (INTERVAL + MARGIN * 2) - (totalATime + totalBTime)) + "\n")
 
 
 if __name__ == "__main__":
-    seqs = getAllSequences('sequences.txt')
-    outputResultsHeader()
-    for seq in seqs:
-        pid = seq[0]
-        seqDetails = seq[1]
-        ts = beginningTimestamp(pid)
-        durations = parseCMD(pid, defineBeginEndTimes(ts))
-        fixations = parseFXD(pid, defineBeginEndTimes(ts))
-        imageTimes = linkTimesToImages(seqDetails, durations)
-        firstGazes = linkFirstGazeToImages(seqDetails, durations)
-        fixes = linkFixationsToImages(seqDetails, fixations)
-        pups = linkPupilsToImages(seqDetails, durations)
-        seqNumbers = getSequenceNumbers(seqDetails)
-        outputResults(pid, imageTimes, firstGazes, fixes, pups, seqNumbers)
+    resultsFile = ""
+    sequencesSource = ""
+    if len(sys.argv) != 3:
+        print "Usage: python ojos.py name_of_sequences_source_file name_of_results_file"
+    else:
+        sequencesSource = sys.argv[1]
+        resultsFile = sys.argv[2]
+        seqs = getAllSequences(sequencesSource)
+        res = open(resultsFile, "w")
+        outputResultsHeader(res)
+        for seq in seqs:
+            pid = seq[0]
+            seqDetails = seq[1]
+            ts = beginningTimestamp(pid)
+            durations = parseCMD(pid, defineBeginEndTimes(ts))
+            fixations = parseFXD(pid, defineBeginEndTimes(ts))
+            imageTimes = linkTimesToImages(seqDetails, durations)
+            firstGazes = linkFirstGazeToImages(seqDetails, durations)
+            fixes = linkFixationsToImages(seqDetails, fixations)
+            pups = linkPupilsToImages(seqDetails, durations)
+            seqNumbers = getSequenceNumbers(seqDetails)
+            outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers)
