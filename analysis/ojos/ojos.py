@@ -8,8 +8,8 @@ NOBLOCK = 0
 CROSSBLOCK = 3
 BOTTOMBLOCK = 2
 TOPBLOCK = 1
-INTERVAL = 5070 # milliseconds. Represents the time between image switches in the task.
-MARGIN = 200 # milliseconds. Giving us a bit extra time before and after images are displayed.
+INTERVAL = 5030 # milliseconds. Represents the time between image switches in the task.
+MARGIN = 100 # milliseconds. Giving us a bit extra time before and after images are displayed.
 TOPBLOCKBEGINX = 360
 TOPBLOCKBEGINY = 50
 TOPBLOCKENDX = 910
@@ -382,9 +382,9 @@ def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers):
         totalAFixes += fixes[0][i]
         totalBFixes += fixes[1][i]
     res.write(str(totalATime) + ", ")
-    res.write(str(totalATime / NUM_PAIRS) + ", ")
+    res.write(str(1.0 * totalATime / NUM_PAIRS) + ", ")
     res.write(str(totalAFixes) + ", ")
-    res.write(str(totalAFixes / NUM_PAIRS) + ", ")
+    res.write(str(1.0 * totalAFixes / NUM_PAIRS) + ", ")
 
     # Pupil summaries
     maxAPupils = maxBPupils = sumAPupils = sumBPupils = countAPupils = countBPupils = 0
