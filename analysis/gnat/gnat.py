@@ -13,18 +13,10 @@ def getInquisitData(filename):
         if not realTask and line[4] == "pause":
             realTask = True
             pid = line[3]
-            for j in range(len(pid)):
-                if not pid.isdigit():
-                    pid = pid[1:]
-                else:
-                    break
-            if len(pid) < 1:
-                print "Invalid participant ID"
-                break
             if pid not in timestamps:
                 timestamps[pid] = line[1]
             elif timestamps[pid] != line[1]:
-                pid = pid + "000" + line[1][:2] + line[1][3:]
+                pid = line[3] + "000" + line[1][:2] + line[1][3:]
                 timestamps[pid] = line[1]
         if realTask and line[9] == "1" and line[-1] in validLines and "background" not in line[4] \
            and "pause" not in line[4] and "reminder" not in line[4] and "good_false" not in line[4] \

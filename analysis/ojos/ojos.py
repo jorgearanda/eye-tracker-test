@@ -47,22 +47,8 @@ def getValues(line):
     v = {}
     t = line.split('\t')
     v['timestamp'] = int(t[0])
-    if len(t[7].strip()) > 0:
-        v['pupilLeft'] = float(t[7])
-    else:
-        v['pupilLeft'] = 0.0
-    if len(t[14].strip()) > 0:
-        v['pupilRight'] = float(t[14])
-    else:
-        v['pupilRight'] = 0.0
-    if len(t[17].strip()) > 0:
-        v['x'] = int(t[17])
-    else:
-        v['x'] = 0
-    if len(t[18].strip()) > 0:
-        v['y'] = int(t[18])
-    else:
-        v['y'] = 0
+    v['x'] = int(t[17])
+    v['y'] = int(t[18])
     v['event'] = t[19].strip()
     v['eventKey'] = t[20].strip()
     return v
