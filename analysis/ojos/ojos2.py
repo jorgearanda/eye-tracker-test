@@ -22,8 +22,6 @@ CROSSBLOCKBEGINX = 600
 CROSSBLOCKBEGINY = 460
 CROSSBLOCKENDX = 680
 CROSSBLOCKENDY = 540
-THRESHOLD = 25 # Number of interruption timestamps that we can safely assume correspond to their book-ending image block
-
 
 def beginningTimestamp(id):
     # Determine the most likely beginning timestamp for the task.
@@ -60,11 +58,11 @@ def getValues(line):
     if len(t[17].strip()) > 0:
         v['x'] = int(t[17])
     else:
-        v['x'] = -1
+        v['x'] = 0
     if len(t[18].strip()) > 0:
         v['y'] = int(t[18])
     else:
-        v['y'] = -1
+        v['y'] = 0
     v['event'] = t[19].strip()
     v['eventKey'] = t[20].strip()
     return v
@@ -90,8 +88,8 @@ def getArea(values):
         return TOPBLOCK
     elif x > BOTTOMBLOCKBEGINX and y > BOTTOMBLOCKBEGINY and x < BOTTOMBLOCKENDX and y < BOTTOMBLOCKENDY:
         return BOTTOMBLOCK
-    # elif x > CROSSBLOCKBEGINX and y > CROSSBLOCKBEGINY and x < CROSSBLOCKENDX and y < CROSSBLOCKENDY:
-    #    return CROSSBLOCK
+    elif x > CROSSBLOCKBEGINX and y > CROSSBLOCKBEGINY and x < CROSSBLOCKENDX and y < CROSSBLOCKENDY:
+        return CROSSBLOCK
     else:
         return NOBLOCK
 
@@ -114,13 +112,12 @@ def parseCMD(id, timeBlocks):
     # If so, get its information. If not, discard.
     cmd = open(id + "CMD.txt").readlines()
     currentTimeBlock = 0
-    lastGaze = NOBLOCK
+    lastGaze = 0
     lastTimestamp = 0
-    gaze = NOBLOCK
+    gaze = 0
     durations = []
     duration = 0
     durationAbove = durationBelow = durationCross = 0  # we don't actually care about gazes at the cross.
-    interruptionLength = 0
 
     # Format for pupils: [0] for top block, [1] for bottom block. And then within each row, the four items are:
     # [0] count
@@ -138,7 +135,7 @@ def parseCMD(id, timeBlocks):
         elif v['timestamp'] >= timeBlocks[currentTimeBlock][0] and v['timestamp'] <= timeBlocks[currentTimeBlock][1]:
             # Within our time window
             gaze = getArea(v)
-            if gaze != NOBLOCK and gaze == lastGaze and interruptionLength <= THRESHOLD:  # We only count after two gazes in the same area, with THRESHOLD interruptions in between
+            if gaze != 0 and gaze == lastGaze:  # We only count after two gazes in the same area, for duration to make sense.
                 duration = v['timestamp'] - lastTimestamp
                 if gaze == TOPBLOCK:
                     durationAbove += duration
@@ -181,20 +178,15 @@ def parseCMD(id, timeBlocks):
                         else:
                             pupils[1][3] = min(pupils[1][3], v['pupilRight'])
             # Prepping for the next timestamp
-            if gaze != NOBLOCK:
-                lastGaze = gaze
-                lastTimestamp = v['timestamp']
-                interruptionLength = 0
-            else:
-                interruptionLength += 1
+            lastGaze = gaze
+            lastTimestamp = v['timestamp']
         elif v['timestamp'] > timeBlocks[currentTimeBlock][1]:
             # After the end of our current time block.
             # Should only happen once per block, as we immediately get ready for the next time block.
             durations.append([durationAbove, durationBelow, durationCross, firstGaze, pupils])
             # Note above that "durations" actually reports on more than durations!
             currentTimeBlock += 1
-            lastGaze = NOBLOCK
-            interruptionLength = 0
+            lastGaze = 0
             durationAbove = durationBelow = durationCross = 0
             pupils = [[0,0,0,0],[0,0,0,0]]
             firstGaze = NOFIRSTGAZE
@@ -340,21 +332,6 @@ def getSequenceNumbers(seq):
             seqNumbers[1][firstID] = i + 1
     return seqNumbers
 
-def getTopOrBottom(seq):
-    # One more with the same principle. In this one we get 1 if the image was shown on top, 0 otherwise.
-    topOrBottom = [[0] * NUM_PAIRS, [0] * NUM_PAIRS]
-    for i in range(NUM_PAIRS):
-        pair = seq[i * 6: i * 6 + 6]
-        firstID = int(pair[1:3]) - 1
-        secondID = int(pair[4:]) - 1
-        if pair[0] == 'a':
-            topOrBottom[0][firstID] = 1
-            topOrBottom[1][secondID] = 0
-        else:
-            topOrBottom[0][secondID] = 0
-            topOrBottom[1][firstID] = 1
-    return topOrBottom
-
 def getAllSequences(filename):
     # Get the sequences for all participants that we're going to analyze.
     # All the lines in the sequences file should be in the form of participantID = sequence
@@ -373,7 +350,6 @@ def outputResultsHeader(res):
         res.write(currentImage + "Time, ")
         res.write(currentImage + "Fixations, ")
         res.write(currentImage + "FirstGaze, ")
-        res.write(currentImage + "IsTop, ")
         res.write(currentImage + "SequenceNum, ")
         res.write(currentImage + "MaxPupil, ")
         res.write(currentImage + "MinPupil, ")
@@ -385,16 +361,14 @@ def outputResultsHeader(res):
         res.write(currentImage + "Time, ")
         res.write(currentImage + "Fixations, ")
         res.write(currentImage + "FirstGaze, ")
-        res.write(currentImage + "IsTop, ")
         res.write(currentImage + "SequenceNum, ")
         res.write(currentImage + "MaxPupil, ")
         res.write(currentImage + "MinPupil, ")
         res.write(currentImage + "MeanPupil, ")
     res.write("diffTotalATime-BTime, diffMeanATime-BTime, diffTotalAFirstGazes-BFirstGazes, ")
-    res.write("diffTotalAFixations-BFixations, percentMeanAPupil-MeanBPupil, ")
-    res.write("totalTimeOnTop, totalTimeOnBottom, diffTop-Bottom, TotalTime-(TotalATime+TotalBTime)\n")
+    res.write("diffTotalAFixations-BFixations, percentMeanAPupil-MeanBPupil, TotalTime-(TotalATime+TotalBTime)\n")
 
-def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, topOrBottom):
+def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers):
     # Long method! Here we output all the stuff we've been collecting.
 
     # Participant ID
@@ -436,15 +410,6 @@ def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, top
     else:
         res.write("0.0, ")
 
-    # Calculate time on top and time on bottom
-    timeOnTop = timeOnBottom = 0.0
-    for i in range(NUM_PAIRS):
-        for j in range(2):
-            if topOrBottom[j][i] == 1:
-                timeOnTop += imageTimes[j][i]
-            else:
-                timeOnBottom += imageTimes[j][i]
-
     for i in range(NUM_PAIRS):
         res.write(str(imageTimes[0][i]) + ", ") # Time
         res.write(str(fixes[0][i]) + ", ") # Fixations
@@ -453,7 +418,6 @@ def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, top
             diffGazes += 1
         else:
             res.write("0, ")
-        res.write(str(topOrBottom[0][i]) + ", ") # isTop?
         res.write(str(seqNumbers[0][i]) + ", ") # Sequence Number
         res.write(str(pups[0][0][i]) + ", ") # MaxPupil
         res.write(str(pups[1][0][i]) + ", ") # MinPupil
@@ -482,7 +446,6 @@ def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, top
             diffGazes -= 1
         else:
             res.write("0, ")
-        res.write(str(topOrBottom[1][i]) + ", ") # isTop?
         res.write(str(seqNumbers[1][i]) + ", ") # Sequence Number
         res.write(str(pups[0][1][i]) + ", ") # MaxPupil
         res.write(str(pups[1][1][i]) + ", ") # MinPupil
@@ -499,8 +462,6 @@ def outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, top
         res.write(str((1.0 * sumAPupils / countAPupils) / (1.0 * sumBPupils / countBPupils)) + ", ")
     else:
         res.write("---, ")
-
-    res.write(str(timeOnTop) + ", " + str(timeOnBottom) + ", " + str(timeOnTop - timeOnBottom) + ", ")
     res.write(str(NUM_PAIRS * (INTERVAL + MARGIN * 2) - (totalATime + totalBTime)) + "\n")
 
 
@@ -527,5 +488,4 @@ if __name__ == "__main__":
             fixes = linkFixationsToImages(seqDetails, fixations)
             pups = linkPupilsToImages(seqDetails, durations)
             seqNumbers = getSequenceNumbers(seqDetails)
-            topOrBottom = getTopOrBottom(seqDetails)
-            outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers, topOrBottom)
+            outputResults(res, pid, imageTimes, firstGazes, fixes, pups, seqNumbers)
